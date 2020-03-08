@@ -55,6 +55,7 @@ import (
 
 	// Exporters
 	"github.com/dapr/components-contrib/exporters"
+	"github.com/dapr/components-contrib/exporters/jaeger"
 	"github.com/dapr/components-contrib/exporters/native"
 	"github.com/dapr/components-contrib/exporters/stringexporter"
 	"github.com/dapr/components-contrib/exporters/zipkin"
@@ -187,6 +188,9 @@ func main() {
 			}),
 		),
 		runtime.WithExporters(
+			exporters_loader.New("jaeger", func() exporters.Exporter {
+				return jaeger.NewJaegerExporter(logContrib)
+			}),
 			exporters_loader.New("zipkin", func() exporters.Exporter {
 				return zipkin.NewZipkinExporter(logContrib)
 			}),
