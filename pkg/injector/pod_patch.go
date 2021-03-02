@@ -30,6 +30,7 @@ import (
 const (
 	sidecarContainerName              = "daprd"
 	daprEnabledKey                    = "dapr.io/enabled"
+	daprEnvKey                        = "dapr.io/env"
 	daprAppPortKey                    = "dapr.io/app-port"
 	daprConfigKey                     = "dapr.io/config"
 	daprAppProtocolKey                = "dapr.io/app-protocol"
@@ -137,8 +138,11 @@ func (i *injector) getPodPatchOperations(ar *v1.AdmissionReview,
 		return nil, err
 	}
 
+	customEnvVars := getEnvVars(pod.Annotations)
+
 	patchOps := []PatchOperation{}
 	envPatchOps := []PatchOperation{}
+	customEnvPatchOps := []PatchOperation{}
 	var path string
 	var value interface{}
 	if len(pod.Spec.Containers) == 0 {
@@ -146,6 +150,7 @@ func (i *injector) getPodPatchOperations(ar *v1.AdmissionReview,
 		value = []corev1.Container{*sidecarContainer}
 	} else {
 		envPatchOps = addDaprEnvVarsToContainers(pod.Spec.Containers)
+		customEnvPatchOps = addCustomEnvVars(customEnvVars, pod.Spec.Containers)
 		path = "/spec/containers/-"
 		value = sidecarContainer
 	}
@@ -159,8 +164,28 @@ func (i *injector) getPodPatchOperations(ar *v1.AdmissionReview,
 		},
 	)
 	patchOps = append(patchOps, envPatchOps...)
+	patchOps = append(patchOps, customEnvPatchOps...)
 
 	return patchOps, nil
+}
+
+// This function add environment variables from dapr annotations to all the containers in any Dapr enabled pod.
+// The containers can be injected or user defined.
+func addCustomEnvVars(annotations map[string]string, containers []corev1.Container) []PatchOperation {
+	envVars := []corev1.EnvVar{}
+	for key, value := range getEnvVars(annotations) {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  key,
+			Value: value,
+		})
+	}
+	envPatchOps := []PatchOperation{}
+	for i, container := range containers {
+		path := fmt.Sprintf("%s/%d/env", containersPath, i)
+		patchOps := getEnvPatchOperations(container.Env, envVars, path)
+		envPatchOps = append(envPatchOps, patchOps...)
+	}
+	return envPatchOps
 }
 
 // This function add Dapr environment variables to all the containers in any Dapr enabled pod.
@@ -318,6 +343,10 @@ func getMaxRequestBodySize(annotations map[string]string) (int32, error) {
 	return getInt32Annotation(annotations, daprMaxRequestBodySize)
 }
 
+func getEnvVars(annotations map[string]string) map[string]string {
+	return getMapAnnotation(annotations, daprEnvKey)
+}
+
 func getBoolAnnotationOrDefault(annotations map[string]string, key string, defaultValue bool) bool {
 	enabled, ok := annotations[key]
 	if !ok {
@@ -361,6 +390,17 @@ func getInt32Annotation(annotations map[string]string, key string) (int32, error
 		return -1, errors.Wrapf(err, "error parsing %s int value %s ", key, s)
 	}
 	return int32(value), nil
+}
+
+func getMapAnnotation(annotations map[string]string, keyPrefix string) map[string]string {
+	envs := map[string]string{}
+	for key, value := range annotations {
+		if strings.HasPrefix(key, keyPrefix) {
+			envKey := strings.Replace(key, fmt.Sprintf("%s/", keyPrefix), "", 1)
+			envs[envKey] = value
+		}
+	}
+	return envs
 }
 
 func getProbeHTTPHandler(port int32, pathElements ...string) corev1.Handler {
