@@ -396,7 +396,7 @@ func getMapAnnotation(annotations map[string]string, keyPrefix string) map[strin
 	envs := map[string]string{}
 	for key, value := range annotations {
 		if strings.HasPrefix(key, keyPrefix) {
-			envKey := strings.Replace(key, fmt.Sprintf("%s/", keyPrefix), "", 1)
+			envKey := strings.Replace(key, fmt.Sprintf("%s.", keyPrefix), "", 1)
 			envs[envKey] = value
 		}
 	}
